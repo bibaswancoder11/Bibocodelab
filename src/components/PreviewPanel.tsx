@@ -142,7 +142,7 @@ export const PreviewPanel: React.FC<PreviewPanelProps> = ({
             ref={iframeRef}
             srcDoc={srcDoc}
             title="BiboCodeLab Live Output"
-            sandbox="allow-scripts allow-modals allow-same-origin allow-forms"
+            sandbox="allow-scripts allow-modals allow-same-origin allow-forms allow-popups"
             className="w-full flex-1 border-0 bg-white"
           />
         </div>

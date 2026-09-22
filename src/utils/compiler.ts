@@ -107,14 +107,17 @@ export function buildExecutableDocument(
           sendToParent('error', ['Evaluation Error: ' + err.message]);
         }
       });
-
-      // Execute user script in a top-level function so global functions attach properly
-      try {
-        ${sanitizedJs}
-      } catch (runtimeError) {
-        sendToParent('error', [runtimeError.name + ': ' + runtimeError.message]);
-      }
     })();
+  </script>
+
+  ${html}
+
+  <script>
+    try {
+      ${sanitizedJs}
+    } catch (runtimeError) {
+      console.error(runtimeError.name + ': ' + runtimeError.message);
+    }
   </script>
 </body>
 </html>`;

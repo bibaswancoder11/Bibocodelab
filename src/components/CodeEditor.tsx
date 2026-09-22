@@ -32,6 +32,15 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({
   const [replaceQuery, setReplaceQuery] = useState('');
   const [matchCount, setMatchCount] = useState(0);
 
+  // Detect touch/mobile environment to prevent invisible text on mobile keyboards/WebViews
+  const [isTouchDevice, setIsTouchDevice] = useState(false);
+  useEffect(() => {
+    setIsTouchDevice(
+      typeof window !== 'undefined' &&
+        ('ontouchstart' in window || navigator.maxTouchPoints > 0)
+    );
+  }, []);
+
   const lines = file.content.split('\n');
   const totalLines = lines.length;
 
@@ -224,19 +233,30 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({
     }
   };
 
-  // Highlighted HTML string with Prism
+  // Highlighted HTML string with Prism with fallback
   const getHighlightedHtml = () => {
-    let grammar = Prism.languages.markup;
-    if (file.language === 'javascript') grammar = Prism.languages.javascript;
-    else if (file.language === 'css') grammar = Prism.languages.css;
-    else if (file.language === 'json') grammar = Prism.languages.json;
+    try {
+      let grammar = Prism.languages.markup;
+      let lang: string = file.language;
+      if (file.language === 'javascript') grammar = Prism.languages.javascript || Prism.languages.markup;
+      else if (file.language === 'css') grammar = Prism.languages.css || Prism.languages.markup;
+      else if (file.language === 'json') grammar = Prism.languages.json || Prism.languages.javascript || Prism.languages.markup;
+      else {
+        grammar = Prism.languages.markup;
+        lang = 'markup';
+      }
 
-    let highlighted = Prism.highlight(file.content || '', grammar, file.language);
-    // Trailing newline fix so height matches exactly
-    if (file.content.endsWith('\n')) {
-      highlighted += ' ';
+      let highlighted = Prism.highlight(file.content || '', grammar, lang);
+      if (file.content.endsWith('\n')) {
+        highlighted += ' ';
+      }
+      return highlighted;
+    } catch {
+      return (file.content || '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
     }
-    return highlighted;
   };
 
   // Find & Replace actions
@@ -319,20 +339,22 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({
         {/* Code Canvas Container */}
         <div className="relative flex-1 h-full min-h-0 min-w-0 overflow-hidden bg-[#0a0d14]">
           {/* Syntax Highlighted Render (Backdrop) */}
-          <pre
-            ref={highlightRef}
-            aria-hidden="true"
-            className="absolute inset-0 m-0 p-3 pl-4 overflow-hidden pointer-events-none whitespace-pre select-none font-mono text-[13px] leading-[1.65]"
-            style={{
-              tabSize: 2,
-              fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
-            }}
-          >
-            <code
-              className={`language-${file.language}`}
-              dangerouslySetInnerHTML={{ __html: getHighlightedHtml() }}
-            />
-          </pre>
+          {!isTouchDevice && (
+            <pre
+              ref={highlightRef}
+              aria-hidden="true"
+              className="absolute inset-0 m-0 p-3 pl-4 overflow-hidden pointer-events-none whitespace-pre select-none font-mono text-[13px] leading-[1.65]"
+              style={{
+                tabSize: 2,
+                fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
+              }}
+            >
+              <code
+                className={`language-${file.language}`}
+                dangerouslySetInnerHTML={{ __html: getHighlightedHtml() }}
+              />
+            </pre>
+          )}
 
           {/* Interactive Textarea (Foreground) */}
           <textarea
@@ -349,10 +371,13 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({
             spellCheck={false}
             autoCapitalize="off"
             autoCorrect="off"
-            className="absolute inset-0 w-full h-full p-3 pl-4 m-0 resize-none border-0 outline-none bg-transparent text-transparent caret-[#9d94ff] font-mono text-[13px] leading-[1.65] whitespace-pre overflow-auto z-10 selection:bg-[#6c63ff44]"
+            className={`absolute inset-0 w-full h-full p-3 pl-4 m-0 resize-none border-0 outline-none bg-transparent caret-[#9d94ff] font-mono text-[13px] leading-[1.65] whitespace-pre overflow-auto z-10 selection:bg-[#6c63ff44] ${
+              isTouchDevice ? 'text-slate-200' : 'text-transparent'
+            }`}
             style={{
               tabSize: 2,
               fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
+              WebkitTextFillColor: isTouchDevice ? '#e2e8f0' : 'transparent',
             }}
           />
         </div>

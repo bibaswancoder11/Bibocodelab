@@ -1,7 +1,3 @@
-# GitHub Actions workflow for building an offline-ready Android APK
-# Note: GitHub Actions discovers workflows under .github/workflows/build-apk.yml
-# This file is also placed in .github/workflows/build-apk.yml for automated runs.
-
 name: Build Offline Android APK
 
 on:
