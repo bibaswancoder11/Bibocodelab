@@ -1,0 +1,6 @@
+{
+  "name": "BiboCodeLab Browser Code Studio",
+  "description": "An interactive browser code playground with instant preview, console logs, multi-tab file management, and responsive live testing.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
