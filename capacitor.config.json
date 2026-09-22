@@ -1,0 +1,8 @@
+{
+  "appId": "com.bibocodelab.app",
+  "appName": "BiboCodeLab",
+  "webDir": "dist",
+  "server": {
+    "androidScheme": "https"
+  }
+}
