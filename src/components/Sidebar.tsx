@@ -4,6 +4,8 @@ import {
   FolderOpen,
   FolderPlus,
   FilePlus,
+  FileUp,
+  FolderUp,
   Trash2,
   HelpCircle,
   Layers,
@@ -14,8 +16,10 @@ import {
   X,
   Search,
   FileCode2,
+  Upload,
 } from 'lucide-react';
 import { ProjectFile, ProjectFolder } from '../types';
+import { ConfirmDeleteModal } from './ConfirmDeleteModal';
 
 interface SidebarProps {
   projectName: string;
@@ -29,6 +33,8 @@ interface SidebarProps {
   onAddFolder: (name: string, parentId?: string | null) => void;
   onDeleteFolder: (folderId: string) => void;
   onRenameFolder: (folderId: string, newName: string) => void;
+  onUploadFiles: (files: FileList | File[], targetFolderId?: string | null) => void;
+  onUploadFolder: (files: FileList | File[], targetFolderId?: string | null) => void;
   onOpenTemplates: () => void;
   onOpenShortcuts: () => void;
 }
@@ -43,6 +49,14 @@ interface RenamingState {
   id: string;
 }
 
+interface DeleteConfirmState {
+  isOpen: boolean;
+  type: 'file' | 'folder';
+  id: string;
+  name: string;
+  desc: string;
+}
+
 export const Sidebar: React.FC<SidebarProps> = ({
   projectName,
   files,
@@ -55,6 +69,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onAddFolder,
   onDeleteFolder,
   onRenameFolder,
+  onUploadFiles,
+  onUploadFolder,
   onOpenTemplates,
   onOpenShortcuts,
 }) => {
@@ -69,6 +85,17 @@ export const Sidebar: React.FC<SidebarProps> = ({
   // Renaming state
   const [renamingItem, setRenamingItem] = useState<RenamingState | null>(null);
   const [renameInputValue, setRenameInputValue] = useState('');
+
+  // Delete confirmation state
+  const [deleteConfirm, setDeleteConfirm] = useState<DeleteConfirmState | null>(null);
+
+  // File & Folder input refs
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const folderInputRef = useRef<HTMLInputElement>(null);
+  const uploadTargetFolderIdRef = useRef<string | null>(null);
+
+  // Drag & drop state
+  const [isDraggingOver, setIsDraggingOver] = useState(false);
 
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(() => {
     return new Set(folders.map((f) => f.id));
@@ -89,7 +116,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
   const toggleFolder = (folderId: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    // Don't collapse if we are renaming this folder
     if (renamingItem?.type === 'folder' && renamingItem.id === folderId) return;
 
     setExpandedFolders((prev) => {
@@ -157,6 +183,89 @@ export const Sidebar: React.FC<SidebarProps> = ({
     setItemNameInput('');
   };
 
+  // Trigger file upload from device
+  const handleTriggerUploadFiles = (targetFolderId: string | null = null, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    uploadTargetFolderIdRef.current = targetFolderId;
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+      fileInputRef.current.click();
+    }
+  };
+
+  // Trigger folder upload from device
+  const handleTriggerUploadFolder = (targetFolderId: string | null = null, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    uploadTargetFolderIdRef.current = targetFolderId;
+    if (folderInputRef.current) {
+      folderInputRef.current.value = '';
+      folderInputRef.current.click();
+    }
+  };
+
+  const onFileInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files.length > 0) {
+      onUploadFiles(e.target.files, uploadTargetFolderIdRef.current);
+    }
+  };
+
+  const onFolderInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files.length > 0) {
+      onUploadFolder(e.target.files, uploadTargetFolderIdRef.current);
+    }
+  };
+
+  // Prompt delete file modal
+  const handlePromptDeleteFile = (file: ProjectFile, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    setDeleteConfirm({
+      isOpen: true,
+      type: 'file',
+      id: file.id,
+      name: file.name,
+      desc: 'This file will be permanently removed from your project workspace.',
+    });
+  };
+
+  // Prompt delete folder modal
+  const handlePromptDeleteFolder = (folder: ProjectFolder, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    // Count descendants
+    const getDescendants = (id: string): string[] => {
+      const children = folders.filter((f) => f.parentId === id);
+      return [id, ...children.flatMap((c) => getDescendants(c.id))];
+    };
+    const targetFolderIds = new Set(getDescendants(folder.id));
+    const countContainedFiles = files.filter((f) => f.folderId && targetFolderIds.has(f.folderId)).length;
+    const countSubfolders = targetFolderIds.size - 1;
+
+    let desc = 'This folder will be permanently removed.';
+    if (countContainedFiles > 0 || countSubfolders > 0) {
+      desc = `This will permanently delete this folder and its ${countContainedFiles} contained file(s)${
+        countSubfolders > 0 ? ` across ${countSubfolders} subfolder(s)` : ''
+      }.`;
+    }
+
+    setDeleteConfirm({
+      isOpen: true,
+      type: 'folder',
+      id: folder.id,
+      name: folder.name,
+      desc,
+    });
+  };
+
+  // Execute confirmed deletion
+  const handleConfirmDelete = () => {
+    if (!deleteConfirm) return;
+    if (deleteConfirm.type === 'file') {
+      onDeleteFile(deleteConfirm.id);
+    } else {
+      onDeleteFolder(deleteConfirm.id);
+    }
+    setDeleteConfirm(null);
+  };
+
   // Start renaming an item
   const handleStartRename = (type: 'file' | 'folder', id: string, currentName: string, e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
@@ -203,6 +312,29 @@ export const Sidebar: React.FC<SidebarProps> = ({
         {text.substring(index + q.length)}
       </>
     );
+  };
+
+  // Drag and drop handlers for Sidebar
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDraggingOver(true);
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDraggingOver(false);
+  };
+
+  const handleDrop = async (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDraggingOver(false);
+
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      onUploadFiles(e.dataTransfer.files, null);
+    }
   };
 
   // Total lines and byte statistics
@@ -275,7 +407,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
             ? 'bg-[#1b2333] text-white font-medium shadow-sm'
             : 'text-slate-400 hover:text-slate-200 hover:bg-[#141b27]'
         }`}
-        title={`Double-click to rename${folderPath ? ` (${folderPath}/${file.name})` : ''}`}
+        title={`Click to select, double-click to rename${folderPath ? ` (${folderPath}/${file.name})` : ''}`}
       >
         <div className="flex items-center gap-2 min-w-0 flex-1">
           {getFileIcon(file)}
@@ -291,12 +423,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
           </div>
         </div>
 
-        {/* Action icons on hover */}
-        <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity shrink-0 ml-1">
+        {/* Action icons (always accessible on mobile/touch, hover on desktop) */}
+        <div className="flex items-center gap-0.5 opacity-80 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity shrink-0 ml-1">
           {/* Rename file button */}
           <button
             onClick={(e) => handleStartRename('file', file.id, file.name, e)}
-            className="p-1 hover:text-indigo-300 text-slate-500 hover:bg-[#1c2638] rounded"
+            className="p-1 hover:text-indigo-300 text-slate-400 hover:bg-[#1c2638] rounded"
             title={`Rename ${file.name}`}
           >
             <Edit2 className="w-3 h-3" />
@@ -304,11 +436,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
           {/* Delete file button */}
           <button
-            onClick={(e) => {
-              e.stopPropagation();
-              onDeleteFile(file.id);
-            }}
-            className="p-1 hover:text-rose-400 text-slate-500 hover:bg-rose-500/10 rounded"
+            onClick={(e) => handlePromptDeleteFile(file, e)}
+            className="p-1 hover:text-rose-400 text-slate-400 hover:bg-rose-500/10 rounded"
             title={`Delete ${file.name}`}
           >
             <Trash2 className="w-3 h-3" />
@@ -370,7 +499,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
             onDoubleClick={(e) => handleStartRename('folder', folder.id, folder.name, e)}
             className="group flex items-center justify-between px-2 py-1.5 rounded text-slate-300 hover:bg-[#141b27] cursor-pointer transition-colors"
             style={{ paddingLeft: `${Math.max(8, level * 12 + 8)}px` }}
-            title="Double-click to rename folder"
+            title="Click to toggle, double-click to rename folder"
           >
             <div className="flex items-center gap-1.5 min-w-0">
               {isExpanded ? (
@@ -386,14 +515,21 @@ export const Sidebar: React.FC<SidebarProps> = ({
               <span className="truncate text-xs font-medium text-slate-200">{folder.name}</span>
             </div>
 
-            {/* Folder action buttons */}
-            <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+            {/* Folder action buttons (always accessible on mobile/touch, hover on desktop) */}
+            <div className="flex items-center gap-0.5 opacity-80 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
               <button
                 onClick={(e) => handleStartCreate('file', folder.id, e)}
                 className="p-1 hover:text-indigo-300 text-slate-400 hover:bg-[#1a2336] rounded"
                 title="Add file inside this folder"
               >
                 <FilePlus className="w-3 h-3" />
+              </button>
+              <button
+                onClick={(e) => handleTriggerUploadFiles(folder.id, e)}
+                className="p-1 hover:text-indigo-300 text-slate-400 hover:bg-[#1a2336] rounded"
+                title="Upload files from device into this folder"
+              >
+                <FileUp className="w-3 h-3" />
               </button>
               <button
                 onClick={(e) => handleStartCreate('folder', folder.id, e)}
@@ -410,10 +546,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 <Edit2 className="w-3 h-3" />
               </button>
               <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onDeleteFolder(folder.id);
-                }}
+                onClick={(e) => handlePromptDeleteFolder(folder, e)}
                 className="p-1 hover:text-rose-400 text-slate-400 hover:bg-rose-500/10 rounded"
                 title={`Delete folder "${folder.name}" and contents`}
               >
@@ -488,228 +621,331 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const rootFiles = files.filter((f) => !f.folderId);
 
   return (
-    <aside className="w-60 bg-[#0c0f16] border-r border-[#1a2130] flex flex-col h-full select-none text-xs shrink-0">
-      {/* Sidebar Header */}
-      <div className="flex items-center justify-between px-3.5 py-3 border-b border-[#1a2130]">
-        <span className="font-bold tracking-wider text-[10px] text-slate-400 uppercase">
-          Explorer
-        </span>
-        <div className="flex items-center gap-1">
-          <button
-            onClick={(e) => handleStartCreate('file', null, e)}
-            className="p-1 rounded text-slate-400 hover:text-white hover:bg-[#182132] transition-colors"
-            title="Create new file at root"
-          >
-            <FilePlus className="w-3.5 h-3.5" />
-          </button>
-          <button
-            onClick={(e) => handleStartCreate('folder', null, e)}
-            className="p-1 rounded text-slate-400 hover:text-white hover:bg-[#182132] transition-colors"
-            title="Create new folder at root"
-          >
-            <FolderPlus className="w-3.5 h-3.5" />
-          </button>
-        </div>
-      </div>
-
-      {/* Quick Search Input */}
-      <div className="px-2.5 py-2 border-b border-[#1a2130] bg-[#090d14]">
-        <div className="relative flex items-center">
-          <Search className="w-3.5 h-3.5 text-slate-500 absolute left-2 pointer-events-none" />
-          <input
-            ref={searchInputRef}
-            type="text"
-            placeholder="Search files... (Ctrl+P)"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Escape') setSearchQuery('');
-            }}
-            className="w-full bg-[#121724] text-slate-200 placeholder-slate-500 text-xs pl-7 pr-7 py-1 rounded-md border border-[#212b3e] focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/40 outline-none transition-colors"
-          />
-          {searchQuery && (
-            <button
-              onClick={() => {
-                setSearchQuery('');
-                searchInputRef.current?.focus();
-              }}
-              className="absolute right-1.5 p-0.5 text-slate-400 hover:text-white hover:bg-[#1b2537] rounded"
-              title="Clear search (Esc)"
-            >
-              <X className="w-3 h-3" />
-            </button>
-          )}
-        </div>
-      </div>
-
-      {/* Root Create Form (if active at root) */}
-      {createPrompt && createPrompt.targetFolderId === null && (
-        <form onSubmit={handleSubmitCreate} className="p-2 border-b border-[#1e273a] bg-[#121824]">
-          <div className="flex items-center gap-1 text-[10px] text-indigo-300 font-semibold mb-1">
-            {createPrompt.type === 'file' ? (
-              <>
-                <FilePlus className="w-3 h-3" />
-                <span>New Root File</span>
-              </>
-            ) : (
-              <>
-                <FolderPlus className="w-3 h-3" />
-                <span>New Root Folder</span>
-              </>
-            )}
+    <>
+      <aside
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
+        onDrop={handleDrop}
+        className="w-60 bg-[#0c0f16] border-r border-[#1a2130] flex flex-col h-full select-none text-xs shrink-0 relative"
+      >
+        {/* Drag & Drop Overlay */}
+        {isDraggingOver && (
+          <div className="absolute inset-0 z-30 bg-indigo-950/90 border-2 border-dashed border-indigo-400/80 flex flex-col items-center justify-center p-4 text-center backdrop-blur-sm pointer-events-none">
+            <Upload className="w-8 h-8 text-indigo-300 animate-bounce mb-2" />
+            <p className="text-xs font-bold text-white">Drop files or folders here</p>
+            <p className="text-[10px] text-indigo-300 mt-1">Import directly into your project</p>
           </div>
-          <input
-            type="text"
-            placeholder={createPrompt.type === 'file' ? 'e.g. data.json, app.js' : 'e.g. components, utils'}
-            value={itemNameInput}
-            onChange={(e) => setItemNameInput(e.target.value)}
-            className="w-full bg-[#0a0d14] text-slate-200 border border-[#2b364c] rounded px-2 py-1 text-xs outline-none focus:border-indigo-500"
-            autoFocus
-          />
-          <div className="flex justify-end gap-1.5 mt-1.5">
-            <button
-              type="button"
-              onClick={() => setCreatePrompt(null)}
-              className="px-2 py-0.5 text-[10px] text-slate-400 hover:text-white"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              className="px-2 py-0.5 text-[10px] bg-indigo-600 hover:bg-indigo-500 text-white rounded font-medium"
-            >
-              Create
-            </button>
-          </div>
-        </form>
-      )}
-
-      {/* Files & Folders Tree OR Search Results View */}
-      <div className="flex-1 overflow-y-auto p-2 space-y-1">
-        {isSearching ? (
-          /* Search Results Display */
-          <div className="space-y-1">
-            <div className="flex items-center justify-between px-2 py-1 text-[10px] font-semibold text-slate-400 uppercase tracking-wider">
-              <span>Matches ({searchResults.length})</span>
-              <button
-                onClick={() => setSearchQuery('')}
-                className="text-indigo-400 hover:text-indigo-300 capitalize text-[10px]"
-              >
-                Clear
-              </button>
-            </div>
-
-            {searchResults.length > 0 ? (
-              <div className="space-y-0.5">
-                {searchResults.map((file) => renderFileRow(file, true))}
-              </div>
-            ) : (
-              <div className="py-8 px-3 text-center text-slate-500 space-y-2">
-                <FileCode2 className="w-6 h-6 mx-auto text-slate-600 stroke-[1.5]" />
-                <p className="text-xs text-slate-400 font-medium">No files found</p>
-                <p className="text-[11px] text-slate-500">
-                  No match for "<span className="text-slate-300">{searchQuery}</span>"
-                </p>
-                <button
-                  onClick={() => setSearchQuery('')}
-                  className="mt-2 text-xs px-2.5 py-1 bg-[#151c2a] hover:bg-[#1e273a] text-indigo-300 border border-indigo-900/40 rounded transition-colors"
-                >
-                  Reset filter
-                </button>
-              </div>
-            )}
-          </div>
-        ) : (
-          /* Normal Explorer Tree */
-          <>
-            {/* Project root folder entry */}
-            <div className="flex items-center justify-between px-2 py-1 rounded text-slate-300 hover:bg-[#141b27] group">
-              <div
-                onClick={() => setIsRootExpanded(!isRootExpanded)}
-                className="flex items-center gap-1.5 cursor-pointer font-medium min-w-0"
-              >
-                {isRootExpanded ? (
-                  <ChevronDown className="w-3 h-3 text-slate-400 shrink-0" />
-                ) : (
-                  <ChevronRight className="w-3 h-3 text-slate-400 shrink-0" />
-                )}
-                <Folder className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
-                <span className="truncate">{projectName}</span>
-              </div>
-
-              <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
-                <button
-                  onClick={(e) => handleStartCreate('file', null, e)}
-                  className="p-1 hover:text-indigo-300 text-slate-400 rounded"
-                  title="Add file at root"
-                >
-                  <FilePlus className="w-3 h-3" />
-                </button>
-                <button
-                  onClick={(e) => handleStartCreate('folder', null, e)}
-                  className="p-1 hover:text-indigo-300 text-slate-400 rounded"
-                  title="Add folder at root"
-                >
-                  <FolderPlus className="w-3 h-3" />
-                </button>
-              </div>
-            </div>
-
-            {isRootExpanded && (
-              <div className="pl-2 space-y-0.5">
-                {/* Render Folders first */}
-                {rootFolders.map((folder) => renderFolderNode(folder, 0))}
-
-                {/* Render Root Files */}
-                {rootFiles.map((file) => renderFileRow(file))}
-              </div>
-            )}
-          </>
         )}
 
-        {/* Project Quick Actions */}
-        <div className="pt-4 border-t border-[#1a2130] mt-3 space-y-1">
-          <div className="px-2 text-[10px] uppercase tracking-wider text-slate-500 font-semibold mb-1">
-            Library & Tools
+        {/* Hidden File & Folder Inputs for native device upload */}
+        <input
+          ref={fileInputRef}
+          type="file"
+          multiple
+          onChange={onFileInputChange}
+          className="hidden"
+        />
+        <input
+          ref={folderInputRef}
+          type="file"
+          // @ts-expect-error webkitdirectory is standard in browsers for directory picker
+          webkitdirectory=""
+          directory=""
+          multiple
+          onChange={onFolderInputChange}
+          className="hidden"
+        />
+
+        {/* Sidebar Header with Action Controls */}
+        <div className="flex items-center justify-between px-3 py-2.5 border-b border-[#1a2130]">
+          <span className="font-bold tracking-wider text-[10px] text-slate-400 uppercase">
+            Explorer
+          </span>
+          <div className="flex items-center gap-0.5">
+            <button
+              onClick={(e) => handleStartCreate('file', null, e)}
+              className="p-1 rounded text-slate-400 hover:text-white hover:bg-[#182132] transition-colors"
+              title="Create new file at root"
+            >
+              <FilePlus className="w-3.5 h-3.5" />
+            </button>
+            <button
+              onClick={(e) => handleStartCreate('folder', null, e)}
+              className="p-1 rounded text-slate-400 hover:text-white hover:bg-[#182132] transition-colors"
+              title="Create new folder at root"
+            >
+              <FolderPlus className="w-3.5 h-3.5" />
+            </button>
+            <button
+              onClick={(e) => handleTriggerUploadFiles(null, e)}
+              className="p-1 rounded text-slate-400 hover:text-indigo-300 hover:bg-[#182132] transition-colors"
+              title="Upload file(s) from device storage"
+            >
+              <FileUp className="w-3.5 h-3.5" />
+            </button>
+            <button
+              onClick={(e) => handleTriggerUploadFolder(null, e)}
+              className="p-1 rounded text-slate-400 hover:text-indigo-300 hover:bg-[#182132] transition-colors"
+              title="Upload folder from device storage"
+            >
+              <FolderUp className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        </div>
+
+        {/* Quick Search Input */}
+        <div className="px-2.5 py-2 border-b border-[#1a2130] bg-[#090d14]">
+          <div className="relative flex items-center">
+            <Search className="w-3.5 h-3.5 text-slate-500 absolute left-2 pointer-events-none" />
+            <input
+              ref={searchInputRef}
+              type="text"
+              placeholder="Search files... (Ctrl+P)"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Escape') setSearchQuery('');
+              }}
+              className="w-full bg-[#121724] text-slate-200 placeholder-slate-500 text-xs pl-7 pr-7 py-1 rounded-md border border-[#212b3e] focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/40 outline-none transition-colors"
+            />
+            {searchQuery && (
+              <button
+                onClick={() => {
+                  setSearchQuery('');
+                  searchInputRef.current?.focus();
+                }}
+                className="absolute right-1.5 p-0.5 text-slate-400 hover:text-white hover:bg-[#1b2537] rounded"
+                title="Clear search (Esc)"
+              >
+                <X className="w-3 h-3" />
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Root Create Form (if active at root) */}
+        {createPrompt && createPrompt.targetFolderId === null && (
+          <form onSubmit={handleSubmitCreate} className="p-2 border-b border-[#1e273a] bg-[#121824]">
+            <div className="flex items-center gap-1 text-[10px] text-indigo-300 font-semibold mb-1">
+              {createPrompt.type === 'file' ? (
+                <>
+                  <FilePlus className="w-3 h-3" />
+                  <span>New Root File</span>
+                </>
+              ) : (
+                <>
+                  <FolderPlus className="w-3 h-3" />
+                  <span>New Root Folder</span>
+                </>
+              )}
+            </div>
+            <input
+              type="text"
+              placeholder={createPrompt.type === 'file' ? 'e.g. data.json, app.js' : 'e.g. components, utils'}
+              value={itemNameInput}
+              onChange={(e) => setItemNameInput(e.target.value)}
+              className="w-full bg-[#0a0d14] text-slate-200 border border-[#2b364c] rounded px-2 py-1 text-xs outline-none focus:border-indigo-500"
+              autoFocus
+            />
+            <div className="flex justify-end gap-1.5 mt-1.5">
+              <button
+                type="button"
+                onClick={() => setCreatePrompt(null)}
+                className="px-2 py-0.5 text-[10px] text-slate-400 hover:text-white"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                className="px-2 py-0.5 text-[10px] bg-indigo-600 hover:bg-indigo-500 text-white rounded font-medium"
+              >
+                Create
+              </button>
+            </div>
+          </form>
+        )}
+
+        {/* Files & Folders Tree OR Search Results View */}
+        <div className="flex-1 overflow-y-auto p-2 space-y-1">
+          {isSearching ? (
+            /* Search Results Display */
+            <div className="space-y-1">
+              <div className="flex items-center justify-between px-2 py-1 text-[10px] font-semibold text-slate-400 uppercase tracking-wider">
+                <span>Matches ({searchResults.length})</span>
+                <button
+                  onClick={() => setSearchQuery('')}
+                  className="text-indigo-400 hover:text-indigo-300 capitalize text-[10px]"
+                >
+                  Clear
+                </button>
+              </div>
+
+              {searchResults.length > 0 ? (
+                <div className="space-y-0.5">
+                  {searchResults.map((file) => renderFileRow(file, true))}
+                </div>
+              ) : (
+                <div className="py-8 px-3 text-center text-slate-500 space-y-2">
+                  <FileCode2 className="w-6 h-6 mx-auto text-slate-600 stroke-[1.5]" />
+                  <p className="text-xs text-slate-400 font-medium">No files found</p>
+                  <p className="text-[11px] text-slate-500">
+                    No match for "<span className="text-slate-300">{searchQuery}</span>"
+                  </p>
+                  <button
+                    onClick={() => setSearchQuery('')}
+                    className="mt-2 text-xs px-2.5 py-1 bg-[#151c2a] hover:bg-[#1e273a] text-indigo-300 border border-indigo-900/40 rounded transition-colors"
+                  >
+                    Reset filter
+                  </button>
+                </div>
+              )}
+            </div>
+          ) : (
+            /* Normal Explorer Tree */
+            <>
+              {/* Project root folder entry */}
+              <div className="flex items-center justify-between px-2 py-1 rounded text-slate-300 hover:bg-[#141b27] group">
+                <div
+                  onClick={() => setIsRootExpanded(!isRootExpanded)}
+                  className="flex items-center gap-1.5 cursor-pointer font-medium min-w-0"
+                >
+                  {isRootExpanded ? (
+                    <ChevronDown className="w-3 h-3 text-slate-400 shrink-0" />
+                  ) : (
+                    <ChevronRight className="w-3 h-3 text-slate-400 shrink-0" />
+                  )}
+                  <Folder className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
+                  <span className="truncate">{projectName}</span>
+                </div>
+
+                <div className="flex items-center gap-0.5 opacity-80 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
+                  <button
+                    onClick={(e) => handleStartCreate('file', null, e)}
+                    className="p-1 hover:text-indigo-300 text-slate-400 rounded"
+                    title="Add file at root"
+                  >
+                    <FilePlus className="w-3 h-3" />
+                  </button>
+                  <button
+                    onClick={(e) => handleStartCreate('folder', null, e)}
+                    className="p-1 hover:text-indigo-300 text-slate-400 rounded"
+                    title="Add folder at root"
+                  >
+                    <FolderPlus className="w-3 h-3" />
+                  </button>
+                  <button
+                    onClick={(e) => handleTriggerUploadFiles(null, e)}
+                    className="p-1 hover:text-indigo-300 text-slate-400 rounded"
+                    title="Upload file(s) from device"
+                  >
+                    <FileUp className="w-3 h-3" />
+                  </button>
+                  <button
+                    onClick={(e) => handleTriggerUploadFolder(null, e)}
+                    className="p-1 hover:text-indigo-300 text-slate-400 rounded"
+                    title="Upload folder from device"
+                  >
+                    <FolderUp className="w-3 h-3" />
+                  </button>
+                </div>
+              </div>
+
+              {isRootExpanded && (
+                <div className="pl-2 space-y-0.5">
+                  {/* Render Folders first */}
+                  {rootFolders.map((folder) => renderFolderNode(folder, 0))}
+
+                  {/* Render Root Files */}
+                  {rootFiles.map((file) => renderFileRow(file))}
+                </div>
+              )}
+            </>
+          )}
+
+          {/* Quick Device Upload Box */}
+          <div className="pt-3 border-t border-[#1a2130] mt-3">
+            <div className="p-2 rounded-lg bg-[#0e131d] border border-[#1d2638] space-y-1.5">
+              <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider block">
+                Device Storage
+              </span>
+              <div className="grid grid-cols-2 gap-1.5">
+                <button
+                  onClick={() => handleTriggerUploadFiles(null)}
+                  className="flex items-center justify-center gap-1.5 px-2 py-1.5 bg-[#161c28] hover:bg-[#1e2738] text-slate-300 hover:text-white rounded border border-[#232d3f] text-[11px] transition-colors font-medium"
+                  title="Upload individual files from internal device storage"
+                >
+                  <FileUp className="w-3.5 h-3.5 text-indigo-400" />
+                  <span>Files</span>
+                </button>
+                <button
+                  onClick={() => handleTriggerUploadFolder(null)}
+                  className="flex items-center justify-center gap-1.5 px-2 py-1.5 bg-[#161c28] hover:bg-[#1e2738] text-slate-300 hover:text-white rounded border border-[#232d3f] text-[11px] transition-colors font-medium"
+                  title="Upload an entire directory folder from device storage"
+                >
+                  <FolderUp className="w-3.5 h-3.5 text-amber-400" />
+                  <span>Folder</span>
+                </button>
+              </div>
+            </div>
           </div>
 
-          <button
-            onClick={onOpenTemplates}
-            className="w-full flex items-center gap-2 px-2 py-1.5 rounded text-slate-400 hover:text-slate-200 hover:bg-[#141b27] transition-colors text-left"
-          >
-            <Layers className="w-3.5 h-3.5 text-indigo-400" />
-            <span>Templates</span>
-          </button>
+          {/* Project Quick Actions */}
+          <div className="pt-2 space-y-1">
+            <div className="px-2 text-[10px] uppercase tracking-wider text-slate-500 font-semibold mb-1">
+              Library & Tools
+            </div>
 
-          <button
-            onClick={onOpenShortcuts}
-            className="w-full flex items-center gap-2 px-2 py-1.5 rounded text-slate-400 hover:text-slate-200 hover:bg-[#141b27] transition-colors text-left"
-          >
-            <HelpCircle className="w-3.5 h-3.5 text-amber-400" />
-            <span>Shortcuts</span>
-          </button>
-        </div>
-      </div>
+            <button
+              onClick={onOpenTemplates}
+              className="w-full flex items-center gap-2 px-2 py-1.5 rounded text-slate-400 hover:text-slate-200 hover:bg-[#141b27] transition-colors text-left"
+            >
+              <Layers className="w-3.5 h-3.5 text-indigo-400" />
+              <span>Templates</span>
+            </button>
 
-      {/* Project Statistics Footer */}
-      <div className="p-3 border-t border-[#1a2130] bg-[#090c12] text-[11px] text-slate-500 space-y-1">
-        <div className="flex justify-between">
-          <span>Folders:</span>
-          <span className="text-slate-400 font-mono">{folders.length}</span>
+            <button
+              onClick={onOpenShortcuts}
+              className="w-full flex items-center gap-2 px-2 py-1.5 rounded text-slate-400 hover:text-slate-200 hover:bg-[#141b27] transition-colors text-left"
+            >
+              <HelpCircle className="w-3.5 h-3.5 text-amber-400" />
+              <span>Shortcuts</span>
+            </button>
+          </div>
         </div>
-        <div className="flex justify-between">
-          <span>Files:</span>
-          <span className="text-slate-400 font-mono">{files.length}</span>
+
+        {/* Project Statistics Footer */}
+        <div className="p-3 border-t border-[#1a2130] bg-[#090c12] text-[11px] text-slate-500 space-y-1">
+          <div className="flex justify-between">
+            <span>Folders:</span>
+            <span className="text-slate-400 font-mono">{folders.length}</span>
+          </div>
+          <div className="flex justify-between">
+            <span>Files:</span>
+            <span className="text-slate-400 font-mono">{files.length}</span>
+          </div>
+          <div className="flex justify-between">
+            <span>Total Lines:</span>
+            <span className="text-slate-400 font-mono">{totalLines}</span>
+          </div>
+          <div className="flex justify-between">
+            <span>Bundle Size:</span>
+            <span className="text-slate-400 font-mono">{(totalBytes / 1024).toFixed(1)} KB</span>
+          </div>
         </div>
-        <div className="flex justify-between">
-          <span>Total Lines:</span>
-          <span className="text-slate-400 font-mono">{totalLines}</span>
-        </div>
-        <div className="flex justify-between">
-          <span>Bundle Size:</span>
-          <span className="text-slate-400 font-mono">{(totalBytes / 1024).toFixed(1)} KB</span>
-        </div>
-      </div>
-    </aside>
+      </aside>
+
+      {/* Delete Confirmation Modal */}
+      {deleteConfirm && (
+        <ConfirmDeleteModal
+          isOpen={deleteConfirm.isOpen}
+          onClose={() => setDeleteConfirm(null)}
+          onConfirm={handleConfirmDelete}
+          title={deleteConfirm.type === 'file' ? 'Delete File' : 'Delete Folder'}
+          description={deleteConfirm.desc}
+          itemType={deleteConfirm.type}
+          itemName={deleteConfirm.name}
+        />
+      )}
+    </>
   );
 };

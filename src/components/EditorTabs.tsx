@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { ProjectFile } from '../types';
-import { X, Edit2, Check } from 'lucide-react';
+import { X, Edit2, Check, Trash2 } from 'lucide-react';
 
 interface EditorTabsProps {
   files: ProjectFile[];
@@ -80,15 +80,15 @@ export const EditorTabs: React.FC<EditorTabsProps> = ({
                 <span className="absolute bottom-0 left-0 right-0 h-[2px] bg-indigo-500 shadow-[0_-1px_6px_rgba(99,102,241,0.5)]" />
               )}
 
-              {/* Close file button */}
-              {file.isDeletable && onCloseFile && (
+              {/* Close / Delete file button */}
+              {onCloseFile && (
                 <button
                   onClick={(e) => {
                     e.stopPropagation();
                     onCloseFile(file.id);
                   }}
-                  className="opacity-0 group-hover:opacity-100 p-0.5 ml-auto hover:text-rose-400 transition-opacity rounded"
-                  title="Delete file"
+                  className="opacity-70 sm:opacity-0 sm:group-hover:opacity-100 p-0.5 ml-auto hover:text-rose-400 text-slate-500 hover:bg-rose-500/10 transition-all rounded"
+                  title={`Delete ${file.name}`}
                 >
                   <X className="w-3 h-3" />
                 </button>
@@ -119,21 +119,33 @@ export const EditorTabs: React.FC<EditorTabsProps> = ({
               </button>
             </form>
           ) : (
-            <button
-              onClick={() => {
-                if (onRenameFile) {
-                  setNameInput(activeFile.name);
-                  setIsEditingName(true);
-                }
-              }}
-              className="flex items-center gap-1.5 text-slate-300 hover:text-white font-mono transition-colors group"
-              title="Click to rename this file"
-            >
-              <span>{activeFile.name}</span>
-              {onRenameFile && (
-                <Edit2 className="w-3 h-3 text-slate-500 group-hover:text-slate-300 transition-colors" />
+            <div className="flex items-center gap-1">
+              <button
+                onClick={() => {
+                  if (onRenameFile) {
+                    setNameInput(activeFile.name);
+                    setIsEditingName(true);
+                  }
+                }}
+                className="flex items-center gap-1.5 text-slate-300 hover:text-white font-mono transition-colors group"
+                title="Click to rename this file"
+              >
+                <span>{activeFile.name}</span>
+                {onRenameFile && (
+                  <Edit2 className="w-3 h-3 text-slate-500 group-hover:text-slate-300 transition-colors" />
+                )}
+              </button>
+
+              {onCloseFile && (
+                <button
+                  onClick={() => onCloseFile(activeFile.id)}
+                  className="text-slate-500 hover:text-rose-400 p-0.5 hover:bg-rose-500/10 rounded transition-colors ml-0.5"
+                  title={`Delete ${activeFile.name}`}
+                >
+                  <Trash2 className="w-3 h-3" />
+                </button>
               )}
-            </button>
+            </div>
           )}
 
           <span className="text-slate-600">|</span>

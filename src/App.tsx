@@ -3,6 +3,7 @@ import { ProjectFile, ProjectFolder, ConsoleEntry, DeviceMode, MobileTab, Editor
 import { STARTER_TEMPLATES } from './data/templates';
 import { buildExecutableDocument } from './utils/compiler';
 import { formatCode } from './utils/formatCode';
+import { processUploadedFolder, readFileContent, getLanguageFromFileName } from './utils/fileUpload';
 import { Topbar } from './components/Topbar';
 import { Sidebar } from './components/Sidebar';
 import { EditorTabs } from './components/EditorTabs';
@@ -395,19 +396,89 @@ ${combinedJs}
 
   // Delete file
   const handleDeleteFile = (fileId: string) => {
-    if (files.length <= 1) {
-      addToast('error', 'Cannot delete the only file in the project');
-      return;
-    }
     const fileToDelete = files.find((f) => f.id === fileId);
     const remaining = files.filter((f) => f.id !== fileId);
-    setFiles(remaining);
 
-    if (activeFileId === fileId) {
-      setActiveFileId(remaining[0].id);
+    if (remaining.length === 0) {
+      // Gracefully maintain a fresh starter file so editor is never broken
+      const fallbackFile: ProjectFile = {
+        id: generateUniqueId('file'),
+        name: 'index.html',
+        language: 'html',
+        content: '<!-- Start building -->\n<div class="app">\n  <h1>Hello World</h1>\n</div>',
+        isDeletable: true,
+      };
+      setFiles([fallbackFile]);
+      setActiveFileId(fallbackFile.id);
+    } else {
+      setFiles(remaining);
+      if (activeFileId === fileId) {
+        setActiveFileId(remaining[0].id);
+      }
     }
     setHasUnsavedChanges(true);
     addToast('info', `Deleted ${fileToDelete?.name || 'file'}`);
+  };
+
+  // Upload individual files from internal device storage
+  const handleUploadFiles = async (fileList: FileList | File[], targetFolderId: string | null = null) => {
+    const filesArray = Array.from(fileList);
+    if (filesArray.length === 0) return;
+
+    try {
+      const newProjectFiles: ProjectFile[] = [];
+
+      for (const file of filesArray) {
+        const content = await readFileContent(file);
+        const language = getLanguageFromFileName(file.name);
+        newProjectFiles.push({
+          id: generateUniqueId('file'),
+          name: file.name,
+          language,
+          content,
+          folderId: targetFolderId,
+          isDeletable: true,
+        });
+      }
+
+      setFiles((prev) => [...prev, ...newProjectFiles]);
+      if (newProjectFiles.length > 0) {
+        // Switch to the first uploaded file or index.html if present
+        const indexFile = newProjectFiles.find((f) => f.name.toLowerCase() === 'index.html');
+        setActiveFileId(indexFile ? indexFile.id : newProjectFiles[0].id);
+      }
+      setHasUnsavedChanges(true);
+      addToast('success', `Uploaded ${newProjectFiles.length} file(s) from device`);
+    } catch (err) {
+      addToast('error', 'Failed to upload files from device');
+    }
+  };
+
+  // Upload entire directory folder from internal device storage
+  const handleUploadFolder = async (fileList: FileList | File[], targetFolderId: string | null = null) => {
+    const filesArray = Array.from(fileList);
+    if (filesArray.length === 0) return;
+
+    try {
+      const { newFolders, newFiles } = await processUploadedFolder(filesArray, folders, targetFolderId);
+
+      if (newFolders.length > 0) {
+        setFolders((prev) => [...prev, ...newFolders]);
+      }
+      if (newFiles.length > 0) {
+        setFiles((prev) => [...prev, ...newFiles]);
+        const indexFile = newFiles.find((f) => f.name.toLowerCase() === 'index.html');
+        setActiveFileId(indexFile ? indexFile.id : newFiles[0].id);
+      }
+
+      setHasUnsavedChanges(true);
+      addToast(
+        'success',
+        `Imported folder with ${newFiles.length} file(s)${newFolders.length > 0 ? ` and ${newFolders.length} folder(s)` : ''}`
+      );
+    } catch (err) {
+      addToast('error', 'Failed to import folder from device');
+    }
   };
 
   // Load starter template
@@ -550,6 +621,8 @@ ${combinedJs}
             onAddFolder={handleAddFolder}
             onDeleteFolder={handleDeleteFolder}
             onRenameFolder={handleRenameFolder}
+            onUploadFiles={handleUploadFiles}
+            onUploadFolder={handleUploadFolder}
             onOpenTemplates={() => setIsTemplatesModalOpen(true)}
             onOpenShortcuts={() => setIsShortcutsModalOpen(true)}
           />

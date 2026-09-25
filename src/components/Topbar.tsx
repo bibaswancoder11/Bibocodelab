@@ -87,19 +87,15 @@ export const Topbar: React.FC<TopbarProps> = ({
 
           {/* App Logo & Title */}
           <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-lg overflow-hidden flex items-center justify-center shrink-0 ring-1 ring-indigo-500/40 shadow-sm bg-[#151c2a]">
-              {!imgError ? (
-                <img
-                  src="/app-icon.png"
-                  alt="BiboCodeLab App Icon"
-                  onError={() => setImgError(true)}
-                  className="w-full h-full object-cover"
-                />
-              ) : (
-                <div className="w-full h-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white font-mono text-xs font-bold">
-                  &lt;/&gt;
-                </div>
-              )}
+            <div className="w-[34px] h-[34px] rounded-xl overflow-hidden flex items-center justify-center shrink-0 ring-1 ring-indigo-500/40 shadow-md shadow-indigo-950/50 bg-[#0d121c]">
+              <img
+                src={imgError ? "/logo.svg" : "/app-icon.png"}
+                alt="BiboCodeLab Logo"
+                onError={() => {
+                  if (!imgError) setImgError(true);
+                }}
+                className="w-full h-full object-cover"
+              />
             </div>
             <div className="flex flex-col">
               <span className="font-extrabold text-sm tracking-tight text-white leading-tight">
