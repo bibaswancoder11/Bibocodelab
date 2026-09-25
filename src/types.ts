@@ -1,10 +1,17 @@
 export type FileId = 'html' | 'css' | 'js' | string;
 
+export interface ProjectFolder {
+  id: string;
+  name: string;
+  parentId?: string | null;
+}
+
 export interface ProjectFile {
   id: string;
   name: string;
   language: 'html' | 'css' | 'javascript' | 'json';
   content: string;
+  folderId?: string | null;
   isDeletable?: boolean;
 }
 

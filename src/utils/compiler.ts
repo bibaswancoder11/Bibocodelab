@@ -1,3 +1,9 @@
+export interface ExtraProjectFile {
+  name: string;
+  content: string;
+  language: 'html' | 'css' | 'javascript' | 'json';
+}
+
 /**
  * Bundles HTML, CSS, and JavaScript into a complete executable document
  * with an advanced console & error interception harness.
@@ -6,10 +12,39 @@ export function buildExecutableDocument(
   html: string,
   css: string,
   js: string,
-  runId: number
+  runId: number,
+  extraFiles: ExtraProjectFile[] = []
 ): string {
+  // Combine all CSS (primary + extra CSS files)
+  const extraCss = extraFiles
+    .filter((f) => f.language === 'css' || f.name.endsWith('.css'))
+    .map((f) => `/* ${f.name} */\n${f.content}`)
+    .join('\n\n');
+  const fullCss = [css, extraCss].filter(Boolean).join('\n\n');
+
+  // Combine all JS (primary + extra JS files)
+  const extraJs = extraFiles
+    .filter((f) => f.language === 'javascript' || f.name.endsWith('.js'))
+    .map((f) => `// ${f.name}\n${f.content}`)
+    .join('\n\n');
+  const fullJs = [js, extraJs].filter(Boolean).join('\n\n');
+
   // Safe script tag escaping to prevent premature script tag closures
-  const sanitizedJs = js.replace(/<\/script/gi, '<\\/script');
+  const sanitizedJs = fullJs.replace(/<\/script/gi, '<\\/script');
+
+  // Embed any custom JSON files into window.__DATA__
+  const jsonFiles = extraFiles.filter((f) => f.language === 'json' || f.name.endsWith('.json'));
+  const jsonEmbedding =
+    jsonFiles.length > 0
+      ? `<script>
+    window.__DATA__ = window.__DATA__ || {};
+    ${jsonFiles
+      .map(
+        (f) => `try { window.__DATA__[${JSON.stringify(f.name)}] = ${f.content.trim() || 'null'}; } catch(e){}`
+      )
+      .join('\n    ')}
+  </script>`
+      : '';
 
   return `<!doctype html>
 <html lang="en">
@@ -18,12 +53,10 @@ export function buildExecutableDocument(
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <style>
     /* User Custom CSS */
-    ${css}
+    ${fullCss}
   </style>
 </head>
 <body>
-  ${html}
-
   <script>
     (function() {
       const RUN_ID = ${runId};
@@ -109,6 +142,8 @@ export function buildExecutableDocument(
       });
     })();
   </script>
+
+  ${jsonEmbedding}
 
   ${html}
 

@@ -1,0 +1,32 @@
+{
+  "id": "/",
+  "name": "BiboCodeLab Browser Code Studio",
+  "short_name": "BiboCodeLab",
+  "description": "An interactive browser code playground with instant preview, console logs, multi-tab file management, and responsive live testing.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "theme_color": "#0f131c",
+  "background_color": "#090c13",
+  "orientation": "any",
+  "icons": [
+    {
+      "src": "/pwa-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/pwa-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/app-icon.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}

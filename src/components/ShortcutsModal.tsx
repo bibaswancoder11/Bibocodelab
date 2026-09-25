@@ -12,6 +12,7 @@ export const ShortcutsModal: React.FC<ShortcutsModalProps> = ({ isOpen, onClose 
   const shortcuts = [
     { key: 'Ctrl + Enter / Cmd + Enter', desc: 'Run code and refresh live preview' },
     { key: 'Ctrl + S / Cmd + S', desc: 'Save files to browser local storage' },
+    { key: 'Ctrl + P / Cmd + P', desc: 'Focus file search in Explorer' },
     { key: 'Ctrl + F / Cmd + F', desc: 'Open Find & Replace toolbar' },
     { key: 'Tab', desc: 'Indent 2 spaces (or indent selected lines)' },
     { key: 'Shift + Tab', desc: 'Outdent 2 spaces (or outdent selected lines)' },

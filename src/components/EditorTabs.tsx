@@ -1,6 +1,6 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { ProjectFile } from '../types';
-import { X, Search } from 'lucide-react';
+import { X, Edit2, Check } from 'lucide-react';
 
 interface EditorTabsProps {
   files: ProjectFile[];
@@ -8,6 +8,7 @@ interface EditorTabsProps {
   onSelectFile: (id: string) => void;
   onCloseFile?: (id: string) => void;
   activeFile: ProjectFile;
+  onRenameFile?: (id: string, newName: string) => void;
 }
 
 export const EditorTabs: React.FC<EditorTabsProps> = ({
@@ -16,7 +17,25 @@ export const EditorTabs: React.FC<EditorTabsProps> = ({
   onSelectFile,
   onCloseFile,
   activeFile,
+  onRenameFile,
 }) => {
+  const [isEditingName, setIsEditingName] = useState(false);
+  const [nameInput, setNameInput] = useState(activeFile.name);
+
+  useEffect(() => {
+    setNameInput(activeFile.name);
+    setIsEditingName(false);
+  }, [activeFile.id, activeFile.name]);
+
+  const handleNameSubmit = (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    const trimmed = nameInput.trim();
+    if (trimmed && onRenameFile && trimmed !== activeFile.name) {
+      onRenameFile(activeFile.id, trimmed);
+    }
+    setIsEditingName(false);
+  };
+
   const getFileBadge = (file: ProjectFile) => {
     if (file.language === 'html') {
       return <span className="text-rose-400 font-bold text-[11px]">H</span>;
@@ -40,11 +59,18 @@ export const EditorTabs: React.FC<EditorTabsProps> = ({
             <div
               key={file.id}
               onClick={() => onSelectFile(file.id)}
+              onDoubleClick={() => {
+                if (isActive && onRenameFile) {
+                  setNameInput(file.name);
+                  setIsEditingName(true);
+                }
+              }}
               className={`group relative flex items-center gap-2 px-3.5 border-r border-[#1a2130] text-xs cursor-pointer transition-colors whitespace-nowrap min-w-[110px] ${
                 isActive
                   ? 'bg-[#0a0d14] text-slate-100 font-medium'
                   : 'bg-[#0d111a] text-slate-400 hover:text-slate-200 hover:bg-[#111722]'
               }`}
+              title="Click to view, double-click to rename"
             >
               {getFileBadge(file)}
               <span>{file.name}</span>
@@ -54,7 +80,7 @@ export const EditorTabs: React.FC<EditorTabsProps> = ({
                 <span className="absolute bottom-0 left-0 right-0 h-[2px] bg-indigo-500 shadow-[0_-1px_6px_rgba(99,102,241,0.5)]" />
               )}
 
-              {/* Optional Close for non-core files */}
+              {/* Close file button */}
               {file.isDeletable && onCloseFile && (
                 <button
                   onClick={(e) => {
@@ -62,7 +88,7 @@ export const EditorTabs: React.FC<EditorTabsProps> = ({
                     onCloseFile(file.id);
                   }}
                   className="opacity-0 group-hover:opacity-100 p-0.5 ml-auto hover:text-rose-400 transition-opacity rounded"
-                  title="Close file"
+                  title="Delete file"
                 >
                   <X className="w-3 h-3" />
                 </button>
@@ -75,7 +101,41 @@ export const EditorTabs: React.FC<EditorTabsProps> = ({
       {/* Editor Sub-header info */}
       <div className="h-8 px-3 bg-[#0a0d14] border-b border-[#161c28] flex items-center justify-between text-[11px] text-slate-400">
         <div className="flex items-center gap-2">
-          <span className="text-slate-300 font-mono">{activeFile.name}</span>
+          {isEditingName ? (
+            <form onSubmit={handleNameSubmit} className="flex items-center gap-1">
+              <input
+                type="text"
+                value={nameInput}
+                onChange={(e) => setNameInput(e.target.value)}
+                onBlur={() => handleNameSubmit()}
+                onKeyDown={(e) => {
+                  if (e.key === 'Escape') setIsEditingName(false);
+                }}
+                className="bg-[#151c2a] text-slate-100 text-xs px-1.5 py-0.5 rounded border border-indigo-500 outline-none font-mono"
+                autoFocus
+              />
+              <button type="submit" className="text-emerald-400 hover:text-emerald-300">
+                <Check className="w-3.5 h-3.5" />
+              </button>
+            </form>
+          ) : (
+            <button
+              onClick={() => {
+                if (onRenameFile) {
+                  setNameInput(activeFile.name);
+                  setIsEditingName(true);
+                }
+              }}
+              className="flex items-center gap-1.5 text-slate-300 hover:text-white font-mono transition-colors group"
+              title="Click to rename this file"
+            >
+              <span>{activeFile.name}</span>
+              {onRenameFile && (
+                <Edit2 className="w-3 h-3 text-slate-500 group-hover:text-slate-300 transition-colors" />
+              )}
+            </button>
+          )}
+
           <span className="text-slate-600">|</span>
           <span className="text-slate-500 uppercase">{activeFile.language}</span>
         </div>

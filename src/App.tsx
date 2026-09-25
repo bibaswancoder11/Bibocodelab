@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { ProjectFile, ConsoleEntry, DeviceMode, MobileTab, EditorPosition, Template } from './types';
+import { ProjectFile, ProjectFolder, ConsoleEntry, DeviceMode, MobileTab, EditorPosition, Template } from './types';
 import { STARTER_TEMPLATES } from './data/templates';
 import { buildExecutableDocument } from './utils/compiler';
 import { formatCode } from './utils/formatCode';
@@ -17,6 +17,7 @@ import { ToastContainer, ToastMessage } from './components/Toast';
 import { generateUniqueId } from './utils/id';
 
 const STORAGE_KEY_FILES = 'bibo-studio-files-v2';
+const STORAGE_KEY_FOLDERS = 'bibo-studio-folders-v1';
 const STORAGE_KEY_NAME = 'bibo-studio-project-name';
 const STORAGE_KEY_AUTORUN = 'bibo-studio-autorun';
 
@@ -35,19 +36,33 @@ export default function App() {
       const oldJs = localStorage.getItem('bibo-js');
       if (oldHtml || oldCss || oldJs) {
         return [
-          { id: 'html', name: 'index.html', language: 'html', content: oldHtml || STARTER_TEMPLATES[0].files.html },
-          { id: 'css', name: 'style.css', language: 'css', content: oldCss || STARTER_TEMPLATES[0].files.css },
-          { id: 'js', name: 'script.js', language: 'javascript', content: oldJs || STARTER_TEMPLATES[0].files.js },
+          { id: 'html', name: 'index.html', language: 'html', content: oldHtml || STARTER_TEMPLATES[0].files.html, isDeletable: false },
+          { id: 'css', name: 'style.css', language: 'css', content: oldCss || STARTER_TEMPLATES[0].files.css, isDeletable: true },
+          { id: 'js', name: 'script.js', language: 'javascript', content: oldJs || STARTER_TEMPLATES[0].files.js, isDeletable: true },
         ];
       }
     } catch (e) {
       // Fallback
     }
     return [
-      { id: 'html', name: 'index.html', language: 'html', content: STARTER_TEMPLATES[0].files.html },
-      { id: 'css', name: 'style.css', language: 'css', content: STARTER_TEMPLATES[0].files.css },
-      { id: 'js', name: 'script.js', language: 'javascript', content: STARTER_TEMPLATES[0].files.js },
+      { id: 'html', name: 'index.html', language: 'html', content: STARTER_TEMPLATES[0].files.html, isDeletable: false },
+      { id: 'css', name: 'style.css', language: 'css', content: STARTER_TEMPLATES[0].files.css, isDeletable: true },
+      { id: 'js', name: 'script.js', language: 'javascript', content: STARTER_TEMPLATES[0].files.js, isDeletable: true },
     ];
+  });
+
+  // Initialize folders from storage
+  const [folders, setFolders] = useState<ProjectFolder[]>(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY_FOLDERS);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) return parsed;
+      }
+    } catch (e) {
+      // Fallback
+    }
+    return [];
   });
 
   const [projectName, setProjectName] = useState<string>(() => {
@@ -93,17 +108,22 @@ export default function App() {
 
   const activeFile = files.find((f) => f.id === activeFileId) || files[0];
 
-  // Core Runner Function
+  // Core Runner Function (Single Preview Guarantee)
   const executeCode = useCallback(() => {
     setIsExecuting(true);
     runCounterRef.current += 1;
     const currentRunId = runCounterRef.current;
 
-    const htmlContent = files.find((f) => f.id === 'html')?.content || '';
+    const htmlContent = files.find((f) => f.id === 'html')?.content || files.find((f) => f.language === 'html')?.content || '';
     const cssContent = files.find((f) => f.id === 'css')?.content || '';
     const jsContent = files.find((f) => f.id === 'js')?.content || '';
 
-    const newDoc = buildExecutableDocument(htmlContent, cssContent, jsContent, currentRunId);
+    // Extra modular files inside custom folders or custom names
+    const extraFiles = files
+      .filter((f) => f.id !== 'html' && f.id !== 'css' && f.id !== 'js')
+      .map((f) => ({ name: f.name, content: f.content, language: f.language }));
+
+    const newDoc = buildExecutableDocument(htmlContent, cssContent, jsContent, currentRunId, extraFiles);
     setCompiledDoc(newDoc);
 
     // Add execution notice to console
@@ -165,12 +185,14 @@ export default function App() {
     setHasUnsavedChanges(true);
   };
 
-  // Save to localStorage
-  const handleSave = () => {
+  // Manual save to localStorage
+  const handleSave = useCallback(() => {
     try {
       localStorage.setItem(STORAGE_KEY_FILES, JSON.stringify(files));
+      localStorage.setItem(STORAGE_KEY_FOLDERS, JSON.stringify(folders));
       localStorage.setItem(STORAGE_KEY_NAME, projectName);
-      // Legacy backup keys
+
+      // Legacy backup keys for backwards compatibility
       const h = files.find((f) => f.id === 'html')?.content;
       const c = files.find((f) => f.id === 'css')?.content;
       const j = files.find((f) => f.id === 'js')?.content;
@@ -183,15 +205,39 @@ export default function App() {
     } catch (e) {
       addToast('error', 'Failed to save to local storage');
     }
-  };
+  }, [files, folders, projectName]);
 
-  // Export as standalone HTML
+  // Global keyboard shortcuts (Ctrl+S / Cmd+S)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
+        e.preventDefault();
+        handleSave();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [handleSave]);
+
+  // Export standalone HTML
   const handleExport = () => {
-    const htmlContent = files.find((f) => f.id === 'html')?.content || '';
-    const cssContent = files.find((f) => f.id === 'css')?.content || '';
-    const jsContent = files.find((f) => f.id === 'js')?.content || '';
+    const htmlContent = files.find((f) => f.id === 'html')?.content || files.find((f) => f.language === 'html')?.content || '';
+    const cssFiles = files.filter((f) => f.language === 'css' || f.name.endsWith('.css'));
+    const jsFiles = files.filter((f) => f.language === 'javascript' || f.name.endsWith('.js'));
+    const jsonFiles = files.filter((f) => f.language === 'json' || f.name.endsWith('.json'));
 
-    const sanitizedJs = jsContent.replace(/<\/script/gi, '<\\/script');
+    const combinedCss = cssFiles.map((c) => `/* ${c.name} */\n${c.content}`).join('\n\n');
+    const combinedJs = jsFiles.map((j) => `// ${j.name}\n${j.content.replace(/<\/script/gi, '<\\/script')}`).join('\n\n');
+
+    let jsonSnippet = '';
+    if (jsonFiles.length > 0) {
+      jsonSnippet = `<script>window.__DATA__ = ${JSON.stringify(
+        jsonFiles.reduce((acc, f) => ({ ...acc, [f.name]: f.content }), {}),
+        null,
+        2
+      )};</script>\n`;
+    }
+
     const standalone = `<!doctype html>
 <html lang="en">
 <head>
@@ -199,13 +245,14 @@ export default function App() {
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>${projectName}</title>
   <style>
-${cssContent}
+${combinedCss}
   </style>
 </head>
 <body>
 ${htmlContent}
+${jsonSnippet}
   <script>
-${sanitizedJs}
+${combinedJs}
   </script>
 </body>
 </html>`;
@@ -214,13 +261,12 @@ ${sanitizedJs}
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `${projectName.toLowerCase().replace(/\s+/g, '-')}.html`;
+    a.download = `${(projectName || 'project').toLowerCase().replace(/\s+/g, '-')}.html`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
-    setTimeout(() => URL.revokeObjectURL(url), 500);
-
-    addToast('success', 'Project exported as standalone HTML');
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    addToast('success', 'Exported HTML project file');
   };
 
   // Format active code
@@ -230,8 +276,72 @@ ${sanitizedJs}
     addToast('info', `Formatted ${activeFile.name}`);
   };
 
-  // Add custom file
-  const handleAddFile = (fileName: string) => {
+  // Create folder
+  const handleAddFolder = (name: string, parentId: string | null = null) => {
+    const id = generateUniqueId('folder');
+    const newFolder: ProjectFolder = { id, name, parentId };
+    setFolders((prev) => [...prev, newFolder]);
+    setHasUnsavedChanges(true);
+    addToast('success', `Created folder "${name}"`);
+  };
+
+  // Rename folder
+  const handleRenameFolder = (folderId: string, newName: string) => {
+    const trimmed = newName.trim();
+    if (!trimmed) return;
+
+    const targetFolder = folders.find((f) => f.id === folderId);
+    if (!targetFolder || targetFolder.name === trimmed) return;
+
+    const duplicate = folders.some(
+      (f) => f.id !== folderId && f.parentId === targetFolder.parentId && f.name.toLowerCase() === trimmed.toLowerCase()
+    );
+    if (duplicate) {
+      addToast('error', `A folder named "${trimmed}" already exists here`);
+      return;
+    }
+
+    setFolders((prev) =>
+      prev.map((f) => (f.id === folderId ? { ...f, name: trimmed } : f))
+    );
+    setHasUnsavedChanges(true);
+    addToast('success', `Renamed folder to "${trimmed}"`);
+  };
+
+  // Delete folder & all its nested contents
+  const handleDeleteFolder = (folderId: string) => {
+    const getDescendants = (id: string): string[] => {
+      const children = folders.filter((f) => f.parentId === id);
+      return [id, ...children.flatMap((c) => getDescendants(c.id))];
+    };
+    const targetFolderIds = new Set(getDescendants(folderId));
+
+    const remainingFiles = files.filter((f) => !f.folderId || !targetFolderIds.has(f.folderId));
+    setFolders((prev) => prev.filter((f) => !targetFolderIds.has(f.id)));
+
+    if (remainingFiles.length === 0) {
+      const fallbackFile: ProjectFile = {
+        id: 'html',
+        name: 'index.html',
+        language: 'html',
+        content: '<!-- Start building -->\n<div class="app">\n  <h1>Hello World</h1>\n</div>',
+        isDeletable: true,
+      };
+      setFiles([fallbackFile]);
+      setActiveFileId('html');
+    } else {
+      setFiles(remainingFiles);
+      if (remainingFiles.every((f) => f.id !== activeFileId)) {
+        setActiveFileId(remainingFiles[0].id);
+      }
+    }
+
+    setHasUnsavedChanges(true);
+    addToast('info', 'Folder and contents deleted');
+  };
+
+  // Create file (in root or folder)
+  const handleAddFile = (fileName: string, targetFolderId: string | null = null) => {
     let language: 'html' | 'css' | 'javascript' | 'json' = 'javascript';
     if (fileName.endsWith('.html') || fileName.endsWith('.htm')) language = 'html';
     else if (fileName.endsWith('.css')) language = 'css';
@@ -242,30 +352,71 @@ ${sanitizedJs}
       id,
       name: fileName,
       language,
-      content: language === 'json' ? '{\n  "name": "data"\n}' : '',
+      content: language === 'json' ? '{\n  "data": []\n}' : '',
+      folderId: targetFolderId,
       isDeletable: true,
     };
 
     setFiles((prev) => [...prev, newFile]);
     setActiveFileId(id);
-    addToast('success', `Created file ${fileName}`);
+    setHasUnsavedChanges(true);
+    addToast('success', `Created file "${fileName}"`);
   };
 
-  // Delete custom file
-  const handleDeleteFile = (fileId: string) => {
-    setFiles((prev) => prev.filter((f) => f.id !== fileId));
-    if (activeFileId === fileId) {
-      setActiveFileId('html');
+  // Rename file
+  const handleRenameFile = (fileId: string, newName: string) => {
+    const trimmed = newName.trim();
+    if (!trimmed) return;
+
+    const targetFile = files.find((f) => f.id === fileId);
+    if (!targetFile || targetFile.name === trimmed) return;
+
+    const duplicate = files.some(
+      (f) => f.id !== fileId && f.folderId === targetFile.folderId && f.name.toLowerCase() === trimmed.toLowerCase()
+    );
+    if (duplicate) {
+      addToast('error', `A file named "${trimmed}" already exists here`);
+      return;
     }
-    addToast('info', 'File removed');
+
+    // Determine language by extension
+    let language: 'html' | 'css' | 'javascript' | 'json' = targetFile.language;
+    if (trimmed.endsWith('.html') || trimmed.endsWith('.htm')) language = 'html';
+    else if (trimmed.endsWith('.css')) language = 'css';
+    else if (trimmed.endsWith('.json')) language = 'json';
+    else if (trimmed.endsWith('.js') || trimmed.endsWith('.javascript')) language = 'javascript';
+
+    setFiles((prev) =>
+      prev.map((f) => (f.id === fileId ? { ...f, name: trimmed, language } : f))
+    );
+    setHasUnsavedChanges(true);
+    addToast('success', `Renamed file to "${trimmed}"`);
+  };
+
+  // Delete file
+  const handleDeleteFile = (fileId: string) => {
+    if (files.length <= 1) {
+      addToast('error', 'Cannot delete the only file in the project');
+      return;
+    }
+    const fileToDelete = files.find((f) => f.id === fileId);
+    const remaining = files.filter((f) => f.id !== fileId);
+    setFiles(remaining);
+
+    if (activeFileId === fileId) {
+      setActiveFileId(remaining[0].id);
+    }
+    setHasUnsavedChanges(true);
+    addToast('info', `Deleted ${fileToDelete?.name || 'file'}`);
   };
 
   // Load starter template
   const handleSelectTemplate = (template: Template) => {
+    setFolders([]);
     setFiles([
-      { id: 'html', name: 'index.html', language: 'html', content: template.files.html },
-      { id: 'css', name: 'style.css', language: 'css', content: template.files.css },
-      { id: 'js', name: 'script.js', language: 'javascript', content: template.files.js },
+      { id: 'html', name: 'index.html', language: 'html', content: template.files.html, isDeletable: false },
+      { id: 'css', name: 'style.css', language: 'css', content: template.files.css, isDeletable: true },
+      { id: 'js', name: 'script.js', language: 'javascript', content: template.files.js, isDeletable: true },
     ]);
     setActiveFileId('html');
     setProjectName(template.name.toLowerCase().replace(/\s+/g, '-'));
@@ -278,10 +429,11 @@ ${sanitizedJs}
 
   // Reset to blank project
   const handleConfirmBlank = () => {
+    setFolders([]);
     setFiles([
-      { id: 'html', name: 'index.html', language: 'html', content: '<!-- Start building -->\n<div class="app">\n  <h1>Hello World</h1>\n</div>' },
-      { id: 'css', name: 'style.css', language: 'css', content: 'body {\n  font-family: sans-serif;\n  padding: 20px;\n}' },
-      { id: 'js', name: 'script.js', language: 'javascript', content: 'console.log("Ready to code!");' },
+      { id: 'html', name: 'index.html', language: 'html', content: '<!-- Start building -->\n<div class="app">\n  <h1>Hello World</h1>\n</div>', isDeletable: false },
+      { id: 'css', name: 'style.css', language: 'css', content: 'body {\n  font-family: sans-serif;\n  padding: 20px;\n}', isDeletable: true },
+      { id: 'js', name: 'script.js', language: 'javascript', content: 'console.log("Ready to code!");', isDeletable: true },
     ]);
     setActiveFileId('html');
     setConsoleEntries([]);
@@ -293,7 +445,6 @@ ${sanitizedJs}
 
   // Evaluate code from console REPL
   const handleExecuteEval = (code: string) => {
-    // Post to iframe
     const iframe = document.querySelector('iframe');
     if (iframe && iframe.contentWindow) {
       iframe.contentWindow.postMessage(
@@ -362,7 +513,7 @@ ${sanitizedJs}
 
   return (
     <div className="h-screen w-screen flex flex-col bg-[#090c13] text-slate-200 overflow-hidden select-none font-sans">
-      {/* Top Application Bar */}
+      {/* Top Application Bar with App Icon & PWA install button */}
       <Topbar
         projectName={projectName}
         onUpdateProjectName={(name) => {
@@ -385,15 +536,20 @@ ${sanitizedJs}
 
       {/* Main Studio Workspace */}
       <div className="flex flex-1 min-h-0 min-w-0 overflow-hidden">
-        {/* Left Explorer Sidebar */}
+        {/* Left Explorer Sidebar with Folders & Files */}
         {isSidebarOpen && (
           <Sidebar
             projectName={projectName}
             files={files}
+            folders={folders}
             activeFileId={activeFileId}
             onSelectFile={(id) => setActiveFileId(id)}
             onAddFile={handleAddFile}
             onDeleteFile={handleDeleteFile}
+            onRenameFile={handleRenameFile}
+            onAddFolder={handleAddFolder}
+            onDeleteFolder={handleDeleteFolder}
+            onRenameFolder={handleRenameFolder}
             onOpenTemplates={() => setIsTemplatesModalOpen(true)}
             onOpenShortcuts={() => setIsShortcutsModalOpen(true)}
           />
@@ -416,6 +572,7 @@ ${sanitizedJs}
               onSelectFile={(id) => setActiveFileId(id)}
               onCloseFile={handleDeleteFile}
               activeFile={activeFile}
+              onRenameFile={handleRenameFile}
             />
 
             <CodeEditor
